@@ -1,0 +1,26 @@
+---
+title: "Untitled"
+author: "Caspar Leung"
+date: "2026-03-05"
+output: html_document
+---
+
+
+```{r}
+# Read the file skipping the first 2 rows
+df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
+
+# Rename columns for easier coding
+colnames(df) <- c("Timestamp", "Interest")
+
+# Check the first few rows
+head(df)
+```
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+
