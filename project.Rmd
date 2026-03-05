@@ -6,21 +6,64 @@ output: html_document
 ---
 
 
-```{r}
+```{r initialization}
+library(ggplot2)
+
 # Read the file skipping the first 2 rows
 df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
 
-# Rename columns for easier coding
-colnames(df) <- c("Timestamp", "Interest")
+# Rename columns
+colnames(df) <- c("Time", "Interest")
+
+df$Time <- substr(df$Time, 1, 19)
+df$Time <- as.POSIXct(df$Time, format="%Y-%m-%dT%H:%M:%S")
 
 # Check the first few rows
 head(df)
 ```
 
+```{r}
+#Interest vs time plot
+ggplot(df, aes(x = Time, y = Interest)) +
+  geom_line(color = "gray60", linewidth = 0.5) +
+  geom_point(color = "steelblue", size = 1, alpha = 0.7) +
+  geom_smooth(method = "loess", color = "darkred", se = FALSE, linewidth = 1) +
+  theme_minimal() +
+  scale_x_datetime(
+    date_labels = "%m-%d %H:%M", 
+    date_breaks = "6 hours"
+  ) +
+  labs(
+    title = "BTS Interest: Points, Raw Line, and Trend",
+    x = "Time of Day",
+    y = "Interest Score"
+  )
 
-
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
+```{r}
+#histogram distribution of search interest
+ggplot(df, aes(x = Interest)) +
+  geom_histogram(bins = 15, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of BTS Search Interest",
+    subtitle = "Frequency of interest scores across the recorded period",
+    x = "Interest Score (0-100)",
+    y = "Frequency"
+  )
+
+```
+```{r}
+#ACF PACF plot
+par(mfrow=c(1,2)) # Put them side-by-side
+acf(df$Interest, main="ACF ")
+pacf(df$Interest, main="PACF ")
+par(mfrow=c(1,1)) # Reset layout
+
+```
+
+
+
+
 
 
