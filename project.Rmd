@@ -76,7 +76,20 @@ ggplot(df, aes(x = Time, y = Residuals)) +
 
 
 
+
 ```{r}
+library(ggplot2)
+
+ggplot(df, aes(x = Time, y = Interest)) +
+  # geom_point creates the scatter plot dots
+  # alpha = 0.6 makes the dots slightly transparent to show overlapping data
+  geom_point(color = "steelblue", alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot: Search Interest Over Time",
+    x = "Time",
+    y = "Interest Score"
+  )
 #ACF PACF plot
 #par(mfrow=c(1,2)) 
 #acf(df$Interest, main="ACF ")
