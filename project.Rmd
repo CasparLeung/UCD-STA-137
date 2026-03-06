@@ -23,24 +23,6 @@ head(df)
 ```
 
 ```{r}
-#Interest vs time plot
-ggplot(df, aes(x = Time, y = Interest)) +
-  geom_line(color = "gray60", linewidth = 0.5) +
-  geom_point(color = "steelblue", size = 1, alpha = 0.7) +
-  geom_smooth(method = "loess", color = "darkred", se = FALSE, linewidth = 1) +
-  theme_minimal() +
-  scale_x_datetime(
-    date_labels = "%m-%d %H:%M", 
-    date_breaks = "6 hours"
-  ) +
-  labs(
-    title = "BTS Interest: Points, Raw Line, and Trend",
-    x = "Time of Day",
-    y = "Interest Score"
-  )
-
-```
-```{r}
 #histogram distribution of search interest
 ggplot(df, aes(x = Interest)) +
   geom_histogram(bins = 15, fill = "steelblue", color = "white") +
@@ -53,12 +35,53 @@ ggplot(df, aes(x = Interest)) +
   )
 
 ```
+
+```{r}
+bts_ts <- ts(df$Interest, frequency = 180, start = 18/24) #it starts at 1800 so start = 18/24
+
+plot(bts_ts, 
+     main = "BTS Search Interest (TS Object)", 
+     ylab = "", 
+     xlab = "Time (Fraction of Day)")
+```
+
+
+
+```{r}
+#Residual Plot
+
+# Calculate the Trend (2-hour window = 15 points)
+df$Trend <- as.numeric(stats::filter(df$Interest, rep(1/15, 15), sides = 2))
+
+# Calculate the Residuals (Raw Data minus the Trend)
+df$Residuals <- df$Interest - df$Trend
+
+
+ggplot(df, aes(x = Time, y = Residuals)) +
+  #"Zero Line"
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 1) +
+  #
+  geom_point(color = "darkblue", alpha = 0.6) +
+  #
+  geom_segment(aes(x=Time, xend=Time, y=0, yend=Residuals), color="gray80") +
+  theme_minimal() +
+  labs(
+    title = "Time Series Residual Plot (BTS Interest)",
+    subtitle = "Spikes above/below the red line represent 'Unexplained' activity",
+    x = "Time of Day",
+    y = "Residual Value"
+  )
+
+```
+
+
+
 ```{r}
 #ACF PACF plot
-par(mfrow=c(1,2)) # Put them side-by-side
-acf(df$Interest, main="ACF ")
-pacf(df$Interest, main="PACF ")
-par(mfrow=c(1,1)) # Reset layout
+#par(mfrow=c(1,2)) 
+#acf(df$Interest, main="ACF ")
+#pacf(df$Interest, main="PACF ")
+#par(mfrow=c(1,1)) 
 
 ```
 
