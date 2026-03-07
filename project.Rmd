@@ -10,7 +10,7 @@ output: html_document
 library(forecast)
 library(ggplot2)
 
-# Read the file skipping the first 2 rows
+# Import data file skipping first 2 rows 
 df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
 
 # Rename columns
@@ -71,62 +71,146 @@ ggplot(df_clean, aes(x = Time, y = Interest)) +
 
 
 ```{r}
-bts_ts <- ts(df_clean$Interest, frequency = 12, start = c(2021,3)) #it starts at 1800 so start = 18/24
+# Time series visualization  
+bts_ts <- ts(df_clean$Interest, frequency = 12, start = c(2021,3)) 
 
+# Check data variance 
 BoxCox.lambda(bts_ts)
-#variance stable
 
+# Fixed skew with log transformation
 bts_log <- log(bts_ts)
 hist(bts_log,
      main = "Histogram of Log-Transformed BTS Interest",
      xlab = "log(Interest)")
-#fixed skew with log transformation
 
 qqnorm(bts_log)
 qqline(bts_log)
 ```
 
 ```{r}
-bts_dec <- decompose(bts_ts, type = "additive")
 
-plot(bts_dec$x,
-     main = "Observed Series",
+# Create time index
+t <- 1:length(bts_ts)
+
+# Fit least squares trend
+trend_fit <- lm(as.numeric(bts_ts) ~ t)
+
+# Plot original series with fitted linear trend
+plot(bts_ts,
+     main = "BTS Search Interest with Least Squares Trend",
      ylab = "Interest",
      xlab = "Time")
 
-plot(bts_dec$trend,
-     main = "Trend Component",
+lines(trend_fit$fitted.values, col = "red", lwd = 2)
+
+# Plot fitted trend alone
+trend_ts <- ts(trend_fit$fitted.values,
+               start = c(2021, 3),
+               frequency = 12)
+
+plot(trend_ts,
+     main = "Least Squares Trend Component",
      ylab = "Trend",
      xlab = "Time")
 
-plot(bts_dec$seasonal,
-     main = "Seasonal Component",
+# Detrend series
+detrended_ts <- bts_ts - trend_fit$fitted.values
+
+plot(ts(detrended_ts, start = c(2021, 3), frequency = 12),
+     main = "Detrended Series",
+     ylab = "Detrended",
+     xlab = "Time")
+
+```
+
+
+```{r}
+# Estimate trend with 12-term moving average filter
+hatm <- filter(bts_ts, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
+
+# Reshape data into yearly rows, monthly columns
+A <- matrix(bts_ts, ncol = 12, byrow = TRUE)
+M <- matrix(hatm,  ncol = 12, byrow = TRUE)
+
+# Estimate seasonal means
+mu <- array(0, 12)
+
+for (k in 1:6)  mu[k]  <- sum(A[2:5, k] - M[2:5, k], na.rm = TRUE) / 4
+for (k in 7:12) mu[k] <- sum(A[1:4, k] - M[1:4, k], na.rm = TRUE) / 4
+
+# Force seasonal effects to sum to zero
+hats <- rep(mu - mean(mu), 5)
+
+# Turn seasonal component into time series form
+seasonal_component <- ts(hats, start = c(2021, 3), frequency = 12)
+
+plot(seasonal_component,
+     main = "Estimated Seasonal Component",
      ylab = "Seasonality",
      xlab = "Time")
-
-plot(bts_dec$random,
-     main = "Random (Residual) Component",
-     ylab = "Random",
-     xlab = "Time")
-
-plot(bts_dec)
 ```
 
 ```{r}
-residuals_ts <- na.omit(bts_dec$random)
-
-plot(residuals_ts,
-     main = "Residual Series",
-     ylab = "Residuals",
+# Deseasonalize 
+bts_adj <- bts_ts
+desea <- bts_adj - seasonal_component
+plot(desea,
+     main = "Deseasonalized BTS Search Interest",
+     ylab = "Deseasonalized",
      xlab = "Time")
-acf(residuals_ts, main = "ACF of Residuals")
-pacf(residuals_ts, main = "PACF of Residuals")
+
+# Least Squares Trend Fitting 
+t <- 1:length(desea)
+
+# Fit trend to deseasonalized series 
+trend_fit <- lm(as.numeric(desea) ~ t + I(t^2))
+summary(trend_fit)
+
+trend_component <- ts(trend_fit$fitted.values,
+                      start = c(2021, 3),
+                      frequency = 12)
+
+plot(desea,
+     main = "Deseasonalized Series with Fitted Trend",
+     ylab = "Deseasonalized",
+     xlab = "Time")
+lines(trend_component, col = "red", lwd = 2)
+
+# Observe residuals
+smooth_resid <- desea - trend_component
+```
+
+
+
+```{r}
+
+# Residual analysis 
+acf(smooth_resid, main = "ACF of Residuals")
+pacf(smooth_resid, main = "PACF of Residuals")
 
 #ordered
 ```
 
 
+```{r}
+model_ar1 <- arima(residuals_ts, order = c(1,0,0))
+model_ma1 <- arima(residuals_ts, order = c(0,0,1))
+model_arma11 <- arima(residuals_ts, order = c(1,0,1))
 
+AIC(model_ar1, model_ma1, model_arma11)
+
+tsdiag(model_ma1)
+acf(residuals(model_ma1))
+summary(model_ma1)
+```
+
+```{r}
+# how many future months to predict 
+h <- 12 
+
+#trend forcast 
+time_index <- 1:length(bts_ts)
+```
 
 
 
