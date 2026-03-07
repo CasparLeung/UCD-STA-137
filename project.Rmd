@@ -7,6 +7,7 @@ output: html_document
 
 
 ```{r initialization}
+library(forecast)
 library(ggplot2)
 
 # Read the file skipping the first 2 rows
@@ -16,68 +17,13 @@ df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
 colnames(df) <- c("Time", "Interest")
 
 df$Time <- substr(df$Time, 1, 19)
-df$Time <- as.POSIXct(df$Time, format="%Y-%m-%dT%H:%M:%S")
 
 # Check the first few rows
 head(df)
+summary(df$Interest)
 ```
 
-```{r}
-#histogram distribution of search interest
-ggplot(df, aes(x = Interest)) +
-  geom_histogram(bins = 15, fill = "steelblue", color = "white") +
-  theme_minimal() +
-  labs(
-    title = "Distribution of BTS Search Interest",
-    subtitle = "Frequency of interest scores across the recorded period",
-    x = "Interest Score (0-100)",
-    y = "Frequency"
-  )
-
-```
-
-```{r}
-bts_ts <- ts(df$Interest, frequency = 180, start = 18/24) #it starts at 1800 so start = 18/24
-
-plot(bts_ts, 
-     main = "BTS Search Interest (TS Object)", 
-     ylab = "", 
-     xlab = "Time (Fraction of Day)")
-```
-
-
-
-```{r}
-#Residual Plot
-
-# Calculate the Trend (2-hour window = 15 points)
-df$Trend <- as.numeric(stats::filter(df$Interest, rep(1/15, 15), sides = 2))
-
-# Calculate the Residuals (Raw Data minus the Trend)
-df$Residuals <- df$Interest - df$Trend
-
-
-ggplot(df, aes(x = Time, y = Residuals)) +
-  #"Zero Line"
-  geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 1) +
-  #
-  geom_point(color = "darkblue", alpha = 0.6) +
-  #
-  geom_segment(aes(x=Time, xend=Time, y=0, yend=Residuals), color="gray80") +
-  theme_minimal() +
-  labs(
-    title = "Time Series Residual Plot (BTS Interest)",
-    subtitle = "Spikes above/below the red line represent 'Unexplained' activity",
-    x = "Time of Day",
-    y = "Residual Value"
-  )
-
-```
-
-
-
-
-```{r}
+```{r remove outlier}
 library(ggplot2)
 
 ggplot(df, aes(x = Time, y = Interest)) +
@@ -88,15 +34,111 @@ ggplot(df, aes(x = Time, y = Interest)) +
   labs(
     title = "Scatter Plot: Search Interest Over Time",
     x = "Time",
+    y = "Interest"
+  )
+
+hist(df$Interest,
+     main = "Histogram of BTS Search Interest",
+     xlab = "Interest")
+
+df[which.max(df$Interest), ]
+
+ggplot(df, aes(x = Time, y = Interest)) +
+  geom_point(color = "steelblue", alpha = 0.6, size = 2) +
+  geom_point(
+    data = df[df$Time == "2026-01-01", ],
+    color = "red",
+    size = 3
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot: Search Interest Over Time",
+    x = "Time",
     y = "Interest Score"
   )
-#ACF PACF plot
-#par(mfrow=c(1,2)) 
-#acf(df$Interest, main="ACF ")
-#pacf(df$Interest, main="PACF ")
-#par(mfrow=c(1,1)) 
 
+df_clean <- df[df$Time != "2026-01-01", ]
+
+ggplot(df_clean, aes(x = Time, y = Interest)) +
+  geom_point(color = "steelblue", alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(
+    title = "Scatter Plot: Search Interest Over Time (Outlier Removed)",
+    x = "Time",
+    y = "Interest Score"
+  )
 ```
+
+
+```{r}
+bts_ts <- ts(df_clean$Interest, frequency = 12, start = c(2021,3)) #it starts at 1800 so start = 18/24
+
+BoxCox.lambda(bts_ts)
+#variance stable
+
+bts_log <- log(bts_ts)
+hist(bts_log,
+     main = "Histogram of Log-Transformed BTS Interest",
+     xlab = "log(Interest)")
+#fixed skew with log transformation
+
+qqnorm(bts_log)
+qqline(bts_log)
+```
+
+```{r}
+bts_dec <- decompose(bts_ts, type = "additive")
+
+plot(bts_dec$x,
+     main = "Observed Series",
+     ylab = "Interest",
+     xlab = "Time")
+
+plot(bts_dec$trend,
+     main = "Trend Component",
+     ylab = "Trend",
+     xlab = "Time")
+
+plot(bts_dec$seasonal,
+     main = "Seasonal Component",
+     ylab = "Seasonality",
+     xlab = "Time")
+
+plot(bts_dec$random,
+     main = "Random (Residual) Component",
+     ylab = "Random",
+     xlab = "Time")
+
+plot(bts_dec)
+```
+
+```{r}
+residuals_ts <- na.omit(bts_dec$random)
+
+plot(residuals_ts,
+     main = "Residual Series",
+     ylab = "Residuals",
+     xlab = "Time")
+acf(residuals_ts, main = "ACF of Residuals")
+pacf(residuals_ts, main = "PACF of Residuals")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
