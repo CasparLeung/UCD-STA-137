@@ -121,6 +121,8 @@ plot(residuals_ts,
      xlab = "Time")
 acf(residuals_ts, main = "ACF of Residuals")
 pacf(residuals_ts, main = "PACF of Residuals")
+
+#ordered
 ```
 
 
