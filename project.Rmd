@@ -10,7 +10,7 @@ output: html_document
 library(forecast)
 library(ggplot2)
 
-# Import data file skipping first 2 rows 
+# Import data file
 df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
 
 # Rename columns
@@ -24,11 +24,10 @@ summary(df$Interest)
 ```
 
 ```{r remove outlier}
-library(ggplot2)
+#Data preparation
 
+#scatter plot
 ggplot(df, aes(x = Time, y = Interest)) +
-  # geom_point creates the scatter plot dots
-  # alpha = 0.6 makes the dots slightly transparent to show overlapping data
   geom_point(color = "steelblue", alpha = 0.6, size = 2) +
   theme_minimal() +
   labs(
@@ -37,10 +36,13 @@ ggplot(df, aes(x = Time, y = Interest)) +
     y = "Interest"
   )
 
+#histogram
+#show the distribution of Interest rating
 hist(df$Interest,
      main = "Histogram of BTS Search Interest",
      xlab = "Interest")
 
+#identify outliers
 df[which.max(df$Interest), ]
 
 ggplot(df, aes(x = Time, y = Interest)) +
@@ -59,6 +61,7 @@ ggplot(df, aes(x = Time, y = Interest)) +
 
 df_clean <- df[df$Time != "2026-01-01", ]
 
+#scatter plot after remove outliers
 ggplot(df_clean, aes(x = Time, y = Interest)) +
   geom_point(color = "steelblue", alpha = 0.6, size = 2) +
   theme_minimal() +
@@ -71,6 +74,8 @@ ggplot(df_clean, aes(x = Time, y = Interest)) +
 
 
 ```{r}
+#Initial data transformations
+
 # Time series visualization  
 bts_ts <- ts(df_clean$Interest, frequency = 12, start = c(2021,3)) 
 
@@ -88,6 +93,7 @@ qqline(bts_log)
 ```
 
 ```{r}
+#Analyzing the “smooth” component: Trend
 
 # Create time index
 t <- 1:length(bts_ts)
@@ -125,6 +131,8 @@ plot(ts(detrended_ts, start = c(2021, 3), frequency = 12),
 
 
 ```{r}
+#Analyzing the “smooth” component: Seasonality
+
 # Estimate trend with 12-term moving average filter
 hatm <- filter(bts_ts, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
 
@@ -151,6 +159,8 @@ plot(seasonal_component,
 ```
 
 ```{r}
+#Analyzing the “smooth” component: Seasonality
+
 # Deseasonalize 
 bts_adj <- bts_ts
 desea <- bts_adj - seasonal_component
@@ -183,6 +193,7 @@ smooth_resid <- desea - trend_component
 
 
 ```{r}
+#Analyzing the “rough” component:
 
 # Residual analysis 
 acf(smooth_resid, main = "ACF of Residuals")
@@ -193,23 +204,100 @@ pacf(smooth_resid, main = "PACF of Residuals")
 
 
 ```{r}
-model_ar1 <- arima(residuals_ts, order = c(1,0,0))
-model_ma1 <- arima(residuals_ts, order = c(0,0,1))
-model_arma11 <- arima(residuals_ts, order = c(1,0,1))
+#Analyzing the “rough” component: model fitting & diagnostics
 
-AIC(model_ar1, model_ma1, model_arma11)
+# Fit candidate models based on ACF/PACF pattern you just saw
+# (Replace orders with what your plots suggest – example below)
 
-tsdiag(model_ma1)
-acf(residuals(model_ma1))
-summary(model_ma1)
+fit_ar1 <- Arima(smooth_resid, order = c(1,0,0))
+fit_ma1 <- Arima(smooth_resid, order = c(0,0,1))
+fit_arma11 <- Arima(smooth_resid, order = c(1,0,1))
+
+# Compare by AIC
+AIC(fit_ar1, fit_ma1, fit_arma11)
+
+# Choose best (example: ARMA(1,1))
+best_fit <- fit_arma11
+
+# Diagnostics on innovations
+innov <- residuals(best_fit)
+
+acf(innov, main = "ACF of ARMA Innovations")
+pacf(innov, main = "PACF of ARMA Innovations")
+
+#conclusion either AR(1) or ARMA(1,1)
 ```
 
 ```{r}
-# how many future months to predict 
-h <- 12 
+#Predict future values:
 
-#trend forcast 
-time_index <- 1:length(bts_ts)
+#Forecast Parameters
+h <- 12  
+n <- length(bts_ts)
+future_t <- (n + 1):(n + h)
+
+#Predict the Smooth Component: Trend
+# quadratic model
+trend_forecast <- predict(trend_fit, newdata = data.frame(t = future_t))
+
+#Predict the Smooth Component: Seasonality
+seasonal_cycle <- seasonal_component[1:12]
+seasonal_forecast <- rep(seasonal_cycle, length.out = h)
+
+#Predict the Rough Component: AR(1)
+final_rough_model <- arima(smooth_resid, order = c(1, 0, 0))
+
+#predict function Section 3.5: Linear Prediction Filters
+rough_pred_obj <- predict(final_rough_model, n.ahead = h)
+rough_forecast <- rough_pred_obj$pred
+rough_se <- rough_pred_obj$se  # Standard error for prediction intervals
+
+#Combine Components for Final Prediction
+
+final_prediction <- trend_forecast + seasonal_forecast + rough_forecast
+
+#95% Prediction Intervals
+lower_pi <- final_prediction - 1.96 * rough_se
+upper_pi <- final_prediction + 1.96 * rough_se
+
+
+#Visualization of Results
+
+# Convert forecasts to time series objects starting Mar 2026
+forecast_ts <- ts(final_prediction, start = c(2026, 3), frequency = 12)
+lower_ts <- ts(lower_pi, start = c(2026, 3), frequency = 12)
+upper_ts <- ts(upper_pi, start = c(2026, 3), frequency = 12)
+
+# Create the plot
+plot(bts_ts, 
+     xlim = c(2021, 2027.5), 
+     ylim = c(min(lower_pi), max(bts_ts) + 10),
+     main = "BTS Search Interest: 12-Month Forecast",
+     ylab = "Interest Score", 
+     xlab = "Year",
+     lwd = 2)
+
+# Add the point forecast line
+lines(forecast_ts, col = "blue", lwd = 2)
+
+# Add the 95% Prediction Interval (dashed lines)
+lines(lower_ts, col = "red", lty = 2)
+lines(upper_ts, col = "red", lty = 2)
+
+# Add a legend
+legend("topright", 
+       legend = c("Observed Data", "AR(1) Forecast", "95% Pred. Interval"),
+       col = c("black", "blue", "red"), 
+       lty = c(1, 1, 2), 
+       lwd = c(2, 2, 1),
+       cex = 0.8)
+
+print(data.frame(
+  Month = seq(as.Date("2026-03-01"), by="month", length.out=h),
+  Forecast = as.numeric(final_prediction),
+  Lower_95 = as.numeric(lower_pi),
+  Upper_95 = as.numeric(upper_pi)
+))
 ```
 
 
