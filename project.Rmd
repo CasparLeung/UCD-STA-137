@@ -95,38 +95,44 @@ qqline(bts_log)
 ```{r}
 #Analyzing the “smooth” component: Trend
 
-# Create time index
-t <- 1:length(bts_ts)
+# --- 1. Extract the "smooth" component: Moving Average Trend ---
 
-# Fit least squares trend
-trend_fit <- lm(as.numeric(bts_ts) ~ t)
+# Define the window size (k). 
+# For monthly data (freq=12), a 5 or 7-month window is common for a "smooth" look.
+k <- 7 
+weights <- rep(1/k, k)
 
-# Plot original series with fitted linear trend
-plot(bts_ts,
-     main = "BTS Search Interest with Least Squares Trend",
-     ylab = "Interest",
+# Use filter to calculate the moving average
+# sides = 2 makes it centered (averages points before and after)
+trend_ma <- filter(bts_ts, filter = weights, sides = 2)
+
+# Plot original series with the Moving Average trend
+plot(bts_ts, 
+     main = "BTS Search Interest with Moving Average Trend", 
+     ylab = "Interest", 
      xlab = "Time")
+lines(trend_ma, col = "red", lwd = 2)
 
-lines(trend_fit$fitted.values, col = "red", lwd = 2)
+# --- 2. Plot the Trend component alone ---
+# (filter returns a ts object automatically if the input was a ts object)
+plot(trend_ma, 
+     main = "Moving Average Trend Component", 
+     ylab = "Trend", 
+     xlab = "Time",
+     col = "red")
 
-# Plot fitted trend alone
-trend_ts <- ts(trend_fit$fitted.values,
-               start = c(2021, 3),
-               frequency = 12)
+# --- 3. Detrend the series ---
+# Subtract the Moving Average trend from the original series
+detrended_ma_ts <- bts_ts - trend_ma
 
-plot(trend_ts,
-     main = "Least Squares Trend Component",
-     ylab = "Trend",
+
+
+# Plot the detrended series
+plot(detrended_ma_ts, 
+     main = "Detrended Series (Moving Average Method)", 
+     ylab = "Detrended", 
      xlab = "Time")
-
-# Detrend series
-detrended_ts <- bts_ts - trend_fit$fitted.values
-
-plot(ts(detrended_ts, start = c(2021, 3), frequency = 12),
-     main = "Detrended Series",
-     ylab = "Detrended",
-     xlab = "Time")
-
+abline(h = 0, lty = 2, col = "blue") # Add a reference line at 0
 ```
 
 
