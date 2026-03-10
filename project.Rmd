@@ -91,66 +91,46 @@ hist(bts_log,
 qqnorm(bts_log)
 qqline(bts_log)
 ```
-
 ```{r}
-#Analyzing the “smooth” component: Trend
+# Analyzing the "smooth" component: trend and seasonality
 
-# --- 1. Extract the "smooth" component: Moving Average Trend ---
+# Estimate trend with 12-term centered moving average
+hatm <- filter(bts_ts, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
 
-# Define the window size (k). 
-# For monthly data (freq=12), a 5 or 7-month window is common for a "smooth" look.
-k <- 7 
-weights <- rep(1/k, k)
-
-# Use filter to calculate the moving average
-# sides = 2 makes it centered (averages points before and after)
-trend_ma <- filter(bts_ts, filter = weights, sides = 2)
-
-# Plot original series with the Moving Average trend
-plot(bts_ts, 
-     main = "BTS Search Interest with Moving Average Trend", 
-     ylab = "Interest", 
+# Plot original series with estimated trend
+plot(bts_ts,
+     main = "BTS Search Interest with Estimated Trend",
+     ylab = "Interest",
      xlab = "Time")
-lines(trend_ma, col = "red", lwd = 2)
+lines(hatm, col = "red", lwd = 2)
 
-# --- 2. Plot the Trend component alone ---
-# (filter returns a ts object automatically if the input was a ts object)
-plot(trend_ma, 
-     main = "Moving Average Trend Component", 
-     ylab = "Trend", 
+# Plot trend component alone
+plot(hatm,
+     main = "Estimated Trend Component",
+     ylab = "Trend",
      xlab = "Time",
      col = "red")
 
-# --- 3. Detrend the series ---
-# Subtract the Moving Average trend from the original series
-detrended_ma_ts <- bts_ts - trend_ma
+# Remove trend component 
+detrended_ts <- bts_ts - hatm
 
-
-
-# Plot the detrended series
-plot(detrended_ma_ts, 
-     main = "Detrended Series (Moving Average Method)", 
-     ylab = "Detrended", 
+plot(detrended_ts,
+     main = "Detrended Series",
+     ylab = "Detrended",
      xlab = "Time")
-abline(h = 0, lty = 2, col = "blue") # Add a reference line at 0
-```
+abline(h = 0, lty = 2, col = "blue")
 
+# Estimate seasonal component using HW2 matrix method 
+A <- matrix(detrended_ts, ncol = 12, byrow = TRUE)
 
-```{r}
-#Analyzing the “smooth” component: Seasonality
-
-# Estimate trend with 12-term moving average filter
-hatm <- filter(bts_ts, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
-
-# Reshape data into yearly rows, monthly columns
-A <- matrix(bts_ts, ncol = 12, byrow = TRUE)
-M <- matrix(hatm,  ncol = 12, byrow = TRUE)
-
-# Estimate seasonal means
 mu <- array(0, 12)
 
-for (k in 1:6)  mu[k]  <- sum(A[2:5, k] - M[2:5, k], na.rm = TRUE) / 4
-for (k in 7:12) mu[k] <- sum(A[1:4, k] - M[1:4, k], na.rm = TRUE) / 4
+for (k in 1:6) {
+  mu[k] <- mean(A[2:5, k], na.rm = TRUE)
+}
+for (k in 7:12) {
+  mu[k] <- mean(A[1:4, k], na.rm = TRUE)
+}
 
 # Force seasonal effects to sum to zero
 hats <- rep(mu - mean(mu), 5)
@@ -162,39 +142,24 @@ plot(seasonal_component,
      main = "Estimated Seasonal Component",
      ylab = "Seasonality",
      xlab = "Time")
+
+# Observe residuals after elimanating trend and seasonality
+smooth_resid <- bts_ts - hatm - seasonal_component
+
+plot(smooth_resid,
+     main = "Residual Series After Removing Trend and Seasonality",
+     ylab = "Residuals",
+     xlab = "Time")
+abline(h = 0, col = "red")
+
+# ACF and PCAF check 
+acf(na.omit(as.numeric(smooth_resid)),
+    main = "ACF of Residuals")
+pacf(na.omit(as.numeric(smooth_resid)),
+     main = "PACF of Residuals")
 ```
 
-```{r}
-#Analyzing the “smooth” component: Seasonality
 
-# Deseasonalize 
-bts_adj <- bts_ts
-desea <- bts_adj - seasonal_component
-plot(desea,
-     main = "Deseasonalized BTS Search Interest",
-     ylab = "Deseasonalized",
-     xlab = "Time")
-
-# Least Squares Trend Fitting 
-t <- 1:length(desea)
-
-# Fit trend to deseasonalized series 
-trend_fit <- lm(as.numeric(desea) ~ t + I(t^2))
-summary(trend_fit)
-
-trend_component <- ts(trend_fit$fitted.values,
-                      start = c(2021, 3),
-                      frequency = 12)
-
-plot(desea,
-     main = "Deseasonalized Series with Fitted Trend",
-     ylab = "Deseasonalized",
-     xlab = "Time")
-lines(trend_component, col = "red", lwd = 2)
-
-# Observe residuals
-smooth_resid <- desea - trend_component
-```
 
 
 
@@ -202,8 +167,20 @@ smooth_resid <- desea - trend_component
 #Analyzing the “rough” component:
 
 # Residual analysis 
-acf(smooth_resid, main = "ACF of Residuals")
-pacf(smooth_resid, main = "PACF of Residuals")
+#acf(smooth_resid, main = "ACF of Residuals")
+#pacf(smooth_resid, main = "PACF of Residuals")
+
+
+diff_resid <- diff(smooth_resid)
+
+plot(diff_resid,
+     main = "Differenced Residuals",
+     ylab = "Differenced Residuals",
+     xlab = "Time")
+abline(h = 0, col = "red")
+
+acf(as.numeric(diff_resid),
+    main = "ACF of Differenced Residuals")
 
 #ordered
 ```
