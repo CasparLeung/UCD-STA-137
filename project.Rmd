@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "STA137 Final Project"
 author: "Caspar Leung and Elizabeth Louie"
 date: "2026-03-05"
 output: html_document
@@ -163,35 +163,22 @@ pacf(na.omit(as.numeric(smooth_resid)),
 
 
 
-```{r}
-#Analyzing the “rough” component:
-
-# Residual analysis 
-#acf(smooth_resid, main = "ACF of Residuals")
-#pacf(smooth_resid, main = "PACF of Residuals")
-
-
-diff_resid <- diff(smooth_resid)
-
-plot(diff_resid,
-     main = "Differenced Residuals",
-     ylab = "Differenced Residuals",
-     xlab = "Time")
-abline(h = 0, col = "red")
-
-acf(as.numeric(diff_resid),
-    main = "ACF of Differenced Residuals")
-
-#ordered
-```
 
 
 ```{r}
 #Analyzing the “rough” component: model fitting & diagnostics
 
-# Fit candidate models based on ACF/PACF pattern you just saw
-# (Replace orders with what your plots suggest – example below)
 
+# Residual analysis 
+acf(na.omit(as.numeric(smooth_resid)),
+    main = "ACF of Residuals")
+
+pacf(na.omit(as.numeric(smooth_resid)),
+     main = "PACF of Residuals")
+
+#ordered
+
+# Fit candidate models 
 fit_ar1 <- Arima(smooth_resid, order = c(1,0,0))
 fit_ma1 <- Arima(smooth_resid, order = c(0,0,1))
 fit_arma11 <- Arima(smooth_resid, order = c(1,0,1))
@@ -200,13 +187,13 @@ fit_arma11 <- Arima(smooth_resid, order = c(1,0,1))
 AIC(fit_ar1, fit_ma1, fit_arma11)
 
 # Choose best AR(1)
-best_fit <- fit_ar1
+best_fit <- fit_ar1 # model with lowest AIC 
 
 # Diagnostics on innovations
 innov <- residuals(best_fit)
 
-acf(innov, main = "ACF of ARMA Innovations")
-pacf(innov, main = "PACF of ARMA Innovations")
+acf(na.omit(innov), main = "ACF of ARMA Innovations")
+pacf(na.omit(innov), main = "PACF of ARMA Innovations")
 
 #conclusion either AR(1) or ARMA(1,1)
 ```
@@ -282,6 +269,7 @@ print(data.frame(
   Upper_95 = as.numeric(upper_pi)
 ))
 ```
+
 
 
 
