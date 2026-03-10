@@ -216,8 +216,8 @@ fit_arma11 <- Arima(smooth_resid, order = c(1,0,1))
 # Compare by AIC
 AIC(fit_ar1, fit_ma1, fit_arma11)
 
-# Choose best (example: ARMA(1,1))
-best_fit <- fit_arma11
+# Choose best AR(1)
+best_fit <- fit_ar1
 
 # Diagnostics on innovations
 innov <- residuals(best_fit)
