@@ -6,43 +6,50 @@ output: html_document
 ---
 
 
-```{r initialization}
+```{r}
 library(forecast)
 library(ggplot2)
 
-# Import data file
+# Data Acquisition 
+
+# import data file
 df <- read.csv("multiTimeline.csv", skip = 2, header = TRUE)
 
-# Rename columns
+# rename columns
 colnames(df) <- c("Time", "Interest")
 
 df$Time <- substr(df$Time, 1, 19)
 
-# Check the first few rows
+# check the first few rows
 head(df)
 summary(df$Interest)
 ```
 
-```{r remove outlier}
-#Data preparation
+```{r}
+# Data Visualization 
 
-#scatter plot
+# scatter plot of original series 
 ggplot(df, aes(x = Time, y = Interest)) +
   geom_point(color = "steelblue", alpha = 0.6, size = 2) +
   theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
   labs(
     title = "Scatter Plot: Search Interest Over Time",
     x = "Time",
     y = "Interest"
   )
 
-#histogram
-#show the distribution of Interest rating
+# histogram showing the distribution of Interest rating
 hist(df$Interest,
      main = "Histogram of BTS Search Interest",
      xlab = "Interest")
 
-#identify outliers
+```
+
+```{r}
+# Data Preparation 
+
+# identify outliers
 df[which.max(df$Interest), ]
 
 ggplot(df, aes(x = Time, y = Interest)) +
@@ -53,76 +60,96 @@ ggplot(df, aes(x = Time, y = Interest)) +
     size = 3
   ) +
   theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
   labs(
     title = "Scatter Plot: Search Interest Over Time",
     x = "Time",
     y = "Interest Score"
   )
 
+# removal of outliers 
 df_clean <- df[df$Time != "2026-01-01", ]
 
-#scatter plot after remove outliers
+# scatter plot after outlier removal 
 ggplot(df_clean, aes(x = Time, y = Interest)) +
   geom_point(color = "steelblue", alpha = 0.6, size = 2) +
   theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(
     title = "Scatter Plot: Search Interest Over Time (Outlier Removed)",
     x = "Time",
     y = "Interest Score"
   )
+
+# check for missing values 
+sum(is.na(df$Interest)) # output = 0 
+
 ```
 
 
 ```{r}
-#Initial data transformations
+# Data Preparation 
 
-# Time series visualization  
+# convert data to time series object   
 bts_ts <- ts(df_clean$Interest, frequency = 12, start = c(2021,3)) 
 
-# Check data variance 
-BoxCox.lambda(bts_ts)
+# boxcox lambda approximation for varaince stability 
+BoxCox.lambda(bts_ts) # output -0.4964918
 
-# Fixed skew with log transformation
-bts_log <- log(bts_ts)
-hist(bts_log,
+# apply boxcox transformation 
+bts_bc <- BoxCox(bts_ts, lambda = -0.4964918)
+
+# plot of transformed series 
+plot(bts_bc,
+     main = "Histogram of Box-Cox Transformed BTS Interest",
+     ylab = "Transformed Interest",
+     xlab = "Time")
+
+# histogram 
+hist(bts_bc,
      main = "Histogram of Log-Transformed BTS Interest",
      xlab = "log(Interest)")
 
-qqnorm(bts_log)
-qqline(bts_log)
+# QQ plot
+qqnorm(bts_bc)
+qqline(bts_bc)
 ```
+
+
 ```{r}
-# Analyzing the "smooth" component: trend and seasonality
+# Analyzing the "Smooth" Component: Trend and Seasonality Elimination 
 
-# Estimate trend with 12-term centered moving average
-hatm <- filter(bts_ts, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
+# estimates trend by computing 12-term centered moving average filter  
+hatm <- filter(bts_bc, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
 
-# Plot original series with estimated trend
+# plot original series with estimated trend
 plot(bts_ts,
      main = "BTS Search Interest with Estimated Trend",
      ylab = "Interest",
      xlab = "Time")
 lines(hatm, col = "red", lwd = 2)
 
-# Plot trend component alone
+# plot of trend component alone
 plot(hatm,
      main = "Estimated Trend Component",
      ylab = "Trend",
      xlab = "Time",
      col = "red")
 
-# Remove trend component 
-detrended_ts <- bts_ts - hatm
+# remove trend component 
+detrended_ts <- bts_bc - hatm
 
+# plot of detrended series 
 plot(detrended_ts,
      main = "Detrended Series",
      ylab = "Detrended",
      xlab = "Time")
 abline(h = 0, lty = 2, col = "blue")
 
-# Estimate seasonal component using HW2 matrix method 
+# HW2 seasonal matrix method 
 A <- matrix(detrended_ts, ncol = 12, byrow = TRUE)
 
+# estimated seasonal effect for each month
 mu <- array(0, 12)
 
 for (k in 1:6) {
@@ -132,10 +159,10 @@ for (k in 7:12) {
   mu[k] <- mean(A[1:4, k], na.rm = TRUE)
 }
 
-# Force seasonal effects to sum to zero
+# seasonal effects sum to zero 
 hats <- rep(mu - mean(mu), 5)
 
-# Turn seasonal component into time series form
+# make seasonal component into time series object 
 seasonal_component <- ts(hats, start = c(2021, 3), frequency = 12)
 
 plot(seasonal_component,
@@ -143,8 +170,8 @@ plot(seasonal_component,
      ylab = "Seasonality",
      xlab = "Time")
 
-# Observe residuals after elimanating trend and seasonality
-smooth_resid <- bts_ts - hatm - seasonal_component
+# residuals after eliminating trend and seasonality
+smooth_resid <- bts_bc - hatm - seasonal_component
 
 plot(smooth_resid,
      main = "Residual Series After Removing Trend and Seasonality",
@@ -152,7 +179,7 @@ plot(smooth_resid,
      xlab = "Time")
 abline(h = 0, col = "red")
 
-# ACF and PCAF check 
+# ACF and PCAF residual analysis check 
 acf(na.omit(as.numeric(smooth_resid)),
     main = "ACF of Residuals")
 pacf(na.omit(as.numeric(smooth_resid)),
@@ -203,7 +230,7 @@ pacf(na.omit(innov), main = "PACF of ARMA Innovations")
 
 #Forecast Parameters
 h <- 12  
-n <- length(bts_ts)
+n <- length(bts_bc)
 future_t <- (n + 1):(n + h)
 
 #Predict the Smooth Component: Trend
@@ -239,9 +266,9 @@ lower_ts <- ts(lower_pi, start = c(2026, 3), frequency = 12)
 upper_ts <- ts(upper_pi, start = c(2026, 3), frequency = 12)
 
 # Create the plot
-plot(bts_ts, 
+plot(bts_bc, 
      xlim = c(2021, 2027.5), 
-     ylim = c(min(lower_pi), max(bts_ts) + 10),
+     ylim = c(min(lower_pi), max(bts_bc) + 10),
      main = "BTS Search Interest: 12-Month Forecast",
      ylab = "Interest Score", 
      xlab = "Year",
