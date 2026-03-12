@@ -119,32 +119,43 @@ qqline(bts_bc)
 ```{r}
 # Analyzing the "Smooth" Component: Trend and Seasonality Elimination 
 
-# estimates trend by computing 12-term centered moving average filter  
-hatm <- filter(bts_bc, sides = 2, c(0.5, rep(1, 11), 0.5) / 12)
+# early period 
+bts_early <- window(bts_bc, end = c(2022, 6))
 
-# plot original series with estimated trend
-plot(bts_ts,
-     main = "BTS Search Interest with Estimated Trend",
-     ylab = "Interest",
-     xlab = "Time")
-lines(hatm, col = "red", lwd = 2)
+# later period 
+bts_late <- window(bts_bc, start = c(2022, 6))
 
-# plot of trend component alone
-plot(hatm,
-     main = "Estimated Trend Component",
-     ylab = "Trend",
-     xlab = "Time",
-     col = "red")
+# apply moving average filter to first part 
+hatm_early <- filter(bts_early, sides = 2, c(0.5, rep(1,11), 0.5)/12)
+
+# apply moving average filter to second part
+hatm_late <- filter(bts_late, sides = 2, c(0.5, rep(1,11), 0.5)/12)
+
+# time series object of original data with outlier 
+bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021,3))
+bts_bc_full <- BoxCox(bts_ts_full, lambda = -0.4964918)
+
+# apply moving average filter to data with outlier 
+hatm_full <- filter(bts_bc_full, sides = 2, c(0.5, rep(1,11), 0.5)/12)
+
+# estimated trends with outlier 
+plot(bts_bc,
+     main="Trend Estimate Not including outl",
+     ylab="Interest",
+     xlab="Time")
+lines(hatm_early, col="blue", lwd=2)
+lines(hatm_late, col="red", lwd=2)
+
+# estimated trend plot without outlier 
+plot(bts_bc_full,
+     main="Trend Estimate Including Outlier",
+     ylab="Interest",
+     xlab="Time")
+
+lines(hatm_full, col="purple", lwd=2)
 
 # remove trend component 
-detrended_ts <- bts_bc - hatm
-
-# plot of detrended series 
-plot(detrended_ts,
-     main = "Detrended Series",
-     ylab = "Detrended",
-     xlab = "Time")
-abline(h = 0, lty = 2, col = "blue")
+#detrended_ts <- bts_bc - hatm
 
 # HW2 seasonal matrix method 
 A <- matrix(detrended_ts, ncol = 12, byrow = TRUE)
@@ -230,7 +241,7 @@ pacf(na.omit(innov), main = "PACF of ARMA Innovations")
 
 #Forecast Parameters
 h <- 12  
-n <- length(bts_bc)
+n <- length(bts_ts)
 future_t <- (n + 1):(n + h)
 
 #Predict the Smooth Component: Trend
@@ -266,9 +277,9 @@ lower_ts <- ts(lower_pi, start = c(2026, 3), frequency = 12)
 upper_ts <- ts(upper_pi, start = c(2026, 3), frequency = 12)
 
 # Create the plot
-plot(bts_bc, 
+plot(bts_ts, 
      xlim = c(2021, 2027.5), 
-     ylim = c(min(lower_pi), max(bts_bc) + 10),
+     ylim = c(min(lower_pi), max(bts_ts) + 10),
      main = "BTS Search Interest: 12-Month Forecast",
      ylab = "Interest Score", 
      xlab = "Year",
@@ -296,6 +307,27 @@ print(data.frame(
   Upper_95 = as.numeric(upper_pi)
 ))
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
