@@ -308,6 +308,75 @@ print(data.frame(
 ))
 ```
 
+```{r forecasting with outlier}
+# Create the full time series object (including the outlier)
+bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021, 3))
+
+# 1.Variance stabilization
+lambda_full <- BoxCox.lambda(bts_ts_full) 
+# Apply BoxCox
+bts_bc_full <- BoxCox(bts_ts_full, lambda = lambda_full)
+
+# 2. check for symmetry
+#plot(bts_bc_full, main = "Box-Cox Transformed BTS Interest (Full Data)")
+
+# 3.Trend estimation using moving average
+hatm_full <- filter(bts_bc_full, sides = 2, c(0.5, rep(1, 11), 0.5)/12)
+
+# 4. seasonal estimation
+# remove trend
+detrended_full <- bts_bc_full - hatm_full
+
+# calculate monthly seasonal effects
+A_full <- matrix(detrended_full, ncol = 12, byrow = TRUE)
+mu_full <- colMeans(A_full, na.rm = TRUE)
+
+# check seasonal components sum to 0
+hats_full <- mu_full - mean(mu_full)
+seasonal_full_ts <- ts(rep(hats_full, length.out = length(bts_ts_full)), 
+                       start = c(2021, 3), frequency = 12)
+
+# "Rough" Component: extract residuals 
+rough_resid_full <- bts_bc_full - hatm_full - seasonal_full_ts
+rough_resid_full <- na.omit(rough_resid_full) # Remove NAs from filter
+
+# residual diagnostics
+#acf(as.numeric(rough_resid_full), main = "ACF of Residuals (Full Data)")
+#pacf(as.numeric(rough_resid_full), main = "PACF of Residuals (Full Data)")
+
+# fit the ARMA Model
+# Compare AIC to find the best fit 
+fit_full <- Arima(rough_resid_full, order = c(1, 0, 0)) #
+
+# Forecast 12 Months Ahead
+h_full <- 12
+
+# Predict Trend linear/quadratic continuation method
+t_vals <- 1:length(bts_bc_full)
+trend_model <- lm(bts_bc_full ~ t_vals + I(t_vals^2))
+future_t_full <- (length(bts_bc_full) + 1):(length(bts_bc_full) + h_full)
+trend_pred <- predict(trend_model, newdata = data.frame(t_vals = future_t_full))
+
+# Predict Seasonality
+seasonal_pred <- rep(hats_full, length.out = h_full)
+
+# Predict Rough Component
+rough_pred_obj <- predict(fit_full, n.ahead = h_full)
+rough_pred <- rough_pred_obj$pred
+rough_se <- rough_pred_obj$se
+
+# Combine all components
+final_forecast_bc <- trend_pred + seasonal_pred + rough_pred
+
+# Step 8: Inverse Box-Cox to return to original scale
+final_forecast <- InvBoxCox(final_forecast_bc, lambda = lambda_full)
+
+# Plotting the results
+
+plot(bts_ts_full, xlim = c(2021, 2027.5), main = "BTS Search Interest Forecast (With Outlier)")
+lines(ts(final_forecast, start = c(2026, 3), frequency = 12), col = "red", lwd = 2)
+```
+
 
 
 
