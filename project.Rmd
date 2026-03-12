@@ -312,18 +312,18 @@ print(data.frame(
 # Create the full time series object (including the outlier)
 bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021, 3))
 
-# 1.Variance stabilization
+# variance stabilization
 lambda_full <- BoxCox.lambda(bts_ts_full) 
 # Apply BoxCox
 bts_bc_full <- BoxCox(bts_ts_full, lambda = lambda_full)
 
-# 2. check for symmetry
+# check for symmetry
 #plot(bts_bc_full, main = "Box-Cox Transformed BTS Interest (Full Data)")
 
-# 3.Trend estimation using moving average
+# Trend estimation using moving average
 hatm_full <- filter(bts_bc_full, sides = 2, c(0.5, rep(1, 11), 0.5)/12)
 
-# 4. seasonal estimation
+# seasonal estimation
 # remove trend
 detrended_full <- bts_bc_full - hatm_full
 
@@ -375,6 +375,80 @@ final_forecast <- InvBoxCox(final_forecast_bc, lambda = lambda_full)
 
 plot(bts_ts_full, xlim = c(2021, 2027.5), main = "BTS Search Interest Forecast (With Outlier)")
 lines(ts(final_forecast, start = c(2026, 3), frequency = 12), col = "red", lwd = 2)
+```
+
+```{r forecasting up to outlier}
+
+# truncate the data at the outlier index = 59
+raw_series_outlier <- ts(df$Interest[1:59], frequency = 12, start = c(2021, 3))
+
+
+# stabilize variance
+power_transform_val <- BoxCox.lambda(raw_series_outlier)
+stabilized_series <- BoxCox(raw_series_outlier, lambda = power_transform_val)
+
+
+# estimate trend using a moving average filter
+moving_avg_trend <- filter(stabilized_series, sides = 2, filter = c(0.5, rep(1, 11), 0.5)/12)
+
+# estimate seasonality
+centered_series <- stabilized_series - moving_avg_trend
+# average the months
+seasonal_matrix <- matrix(centered_series[7:54], ncol = 12, byrow = TRUE) 
+monthly_effects <- colMeans(seasonal_matrix, na.rm = TRUE)
+final_seasonal_pattern <- monthly_effects - mean(monthly_effects)
+
+seasonal_overlay <- ts(rep(final_seasonal_pattern, length.out = 59), 
+                       start = c(2021, 3), frequency = 12)
+
+# --- 4. RESIDUAL ANALYSIS (ROUGH COMPONENT) ---
+stochastic_resid <- stabilized_series - moving_avg_trend - seasonal_overlay
+stochastic_resid <- na.omit(stochastic_resid)
+
+# ACF and PACF
+acf(as.numeric(stochastic_resid), main = "ACF: Residuals Ending at Outlier")
+pacf(as.numeric(stochastic_resid), main = "PACF: Residuals Ending at Outlier")
+
+# fit AR(1) to the rough component
+ar1_residual_model <- arima(stochastic_resid, order = c(1, 0, 0))
+stochastic_forecast_obj <- predict(ar1_residual_model, n.ahead = 12)
+
+# predict trend forward using quadratic regression
+time_indices <- 1:59
+quadratic_trend_fit <- lm(stabilized_series ~ time_indices + I(time_indices^2))
+future_indices <- 60:71
+predicted_trend <- predict(quadratic_trend_fit, newdata = data.frame(time_indices = future_indices))
+
+# Predict Seasonality forward by repeating the cycle
+predicted_season <- rep(final_seasonal_pattern, length.out = 12)
+
+# Combine predicted parts and reverse Box-Cox to original scale
+total_forecast_bc <- predicted_trend + predicted_season + stochastic_forecast_obj$pred
+final_interest_forecast <- InvBoxCox(total_forecast_bc, lambda = power_transform_val)
+
+y_upper_limit <- max(c(raw_series_outlier, final_interest_forecast), na.rm = TRUE)
+
+plot(raw_series_outlier, 
+     xlim = c(2021, 2027.5), 
+     ylim = c(0, y_upper_limit + 15),
+     main = "BTS Search Interest: Forecast from Outlier Point",
+     ylab = "Interest Score",
+     xlab = "Year",
+     lwd = 2)
+
+# Convert forecast to TS object starting Feb 2026
+forecast_start_date <- c(2026, 2)
+lines(ts(final_interest_forecast, start = forecast_start_date, frequency = 12), 
+      col = "darkgreen", lwd = 2)
+
+# Add Legend
+legend("topleft", 
+       legend = c("Observed Data (Ending at Outlier)", "Forecasted Interest"),
+       col = c("black", "darkgreen"), 
+       lty = 1, lwd = 2, cex = 0.8)
+
+cat("Forecasted point for Feb 2026 (immediately after outlier):", final_interest_forecast[1])
+
 ```
 
 
