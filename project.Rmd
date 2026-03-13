@@ -116,6 +116,8 @@ qqline(bts_bc)
 ```
 
 
+
+
 ```{r}
 # Analyzing the "Smooth" Component: Trend and Seasonality Elimination 
 
@@ -124,21 +126,26 @@ bts_early <- window(bts_bc, end = c(2022, 6))
 
 # later period 
 bts_late <- window(bts_bc, start = c(2022, 6))
-
-# apply moving average filter to first part 
-hatm_early <- filter(bts_early, sides = 2, c(0.5, rep(1,11), 0.5)/12)
-
-# apply moving average filter to second part
-hatm_late <- filter(bts_late, sides = 2, c(0.5, rep(1,11), 0.5)/12)
-
 # time series object of original data with outlier 
 bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021,3))
-bts_bc_full <- BoxCox(bts_ts_full, lambda = -0.4964918)
+BoxCox_full <- BoxCox.lambda(bts_ts_full)
+bts_bc_full <- BoxCox(bts_ts_full, lambda = BoxCox_full)
 
-# apply moving average filter to data with outlier 
+weights <- c(0.5, rep(1, 11), 0.5)/12
+hatm_early <- stats::filter(bts_early, filter = weights, sides = 2)
+hatm_late  <- stats::filter(bts_late,  filter = weights, sides = 2)
 hatm_full <- filter(bts_bc_full, sides = 2, c(0.5, rep(1,11), 0.5)/12)
 
-# estimated trends with outlier 
+
+
+decomp <- decompose(bts_bc, type = "additive")
+
+# extract components for your analysis
+trend_component_fore    <- decomp$trend    # This is mt
+seasonal_component_fore  <- decomp$seasonal # This is st
+rough_component_fore     <- decomp$random   # This is Yt (the residuals)
+
+# estimated trends without outlier 
 plot(bts_bc,
      main="Trend Estimate Not including outl",
      ylab="Interest",
@@ -146,56 +153,32 @@ plot(bts_bc,
 lines(hatm_early, col="blue", lwd=2)
 lines(hatm_late, col="red", lwd=2)
 
-# estimated trend plot without outlier 
+# estimated trend plot with outlier 
 plot(bts_bc_full,
      main="Trend Estimate Including Outlier",
      ylab="Interest",
      xlab="Time")
-
 lines(hatm_full, col="purple", lwd=2)
 
-# remove trend component 
-#detrended_ts <- bts_bc - hatm
+# visualize the whole process
+plot(decomp)
 
-# HW2 seasonal matrix method 
-A <- matrix(detrended_ts, ncol = 12, byrow = TRUE)
+# check if the Residuals are White Noise
+# ACF and Histogram
+checkresiduals(decomp$random)
 
-# estimated seasonal effect for each month
-mu <- array(0, 12)
+# residual after trend & seasonality remove
+plot(decomp$random, 
+     main = "Residuals After Trend & Seasonality Removal",
+     ylab = "Residual Value",
+     xlab = "Year",
+     col = "blue")
 
-for (k in 1:6) {
-  mu[k] <- mean(A[2:5, k], na.rm = TRUE)
-}
-for (k in 7:12) {
-  mu[k] <- mean(A[1:4, k], na.rm = TRUE)
-}
+abline(h = 0, col = "red", lty = 2)
 
-# seasonal effects sum to zero 
-hats <- rep(mu - mean(mu), 5)
 
-# make seasonal component into time series object 
-seasonal_component <- ts(hats, start = c(2021, 3), frequency = 12)
-
-plot(seasonal_component,
-     main = "Estimated Seasonal Component",
-     ylab = "Seasonality",
-     xlab = "Time")
-
-# residuals after eliminating trend and seasonality
-smooth_resid <- bts_bc - hatm - seasonal_component
-
-plot(smooth_resid,
-     main = "Residual Series After Removing Trend and Seasonality",
-     ylab = "Residuals",
-     xlab = "Time")
-abline(h = 0, col = "red")
-
-# ACF and PCAF residual analysis check 
-acf(na.omit(as.numeric(smooth_resid)),
-    main = "ACF of Residuals")
-pacf(na.omit(as.numeric(smooth_resid)),
-     main = "PACF of Residuals")
 ```
+
 
 
 
@@ -208,12 +191,9 @@ pacf(na.omit(as.numeric(smooth_resid)),
 
 
 # Residual analysis 
-acf(na.omit(as.numeric(smooth_resid)),
-    main = "ACF of Residuals")
+checkresiduals(decomp$random)
 
-pacf(na.omit(as.numeric(smooth_resid)),
-     main = "PACF of Residuals")
-
+smooth_resid <- na.omit(decomp$random)
 #ordered
 
 # Fit candidate models 
@@ -238,74 +218,72 @@ pacf(na.omit(innov), main = "PACF of ARMA Innovations")
 
 ```{r}
 #Predict future values:
-
-#Forecast Parameters
 h <- 12  
-n <- length(bts_ts)
-future_t <- (n + 1):(n + h)
+# series WITHOUT the outlier
+n <- length(bts_bc) 
+weights <- c(0.5, rep(1, 11), 0.5)/12
 
-#Predict the Smooth Component: Trend
-# quadratic model
-trend_forecast <- predict(trend_fit, newdata = data.frame(t = future_t))
+# trend calculated on clean data) ---
+hatm_clean <- stats::filter(bts_bc, filter = weights, sides = 2)
+last_trend <- as.numeric(na.omit(hatm_clean))
+last_trend <- last_trend[length(last_trend)] 
+trend_forecast <- rep(last_trend, h) 
 
-#Predict the Smooth Component: Seasonality
-seasonal_cycle <- seasonal_component[1:12]
+# seasonality
+decomp_clean <- decompose(bts_bc, type = "additive")
+# Extract the 12-month pattern starting from January to align with forecast start
+seasonal_cycle <- as.numeric(decomp_clean$seasonal)[1:12]
 seasonal_forecast <- rep(seasonal_cycle, length.out = h)
 
-#Predict the Rough Component: AR(1)
-final_rough_model <- arima(smooth_resid, order = c(1, 0, 0))
+# rough component ar(1)
+rough_clean <- na.omit(decomp_clean$random)
+fit_ar1_clean <- Arima(rough_clean, order = c(1, 0, 0))
 
-#predict function Section 3.5: Linear Prediction Filters
-rough_pred_obj <- predict(final_rough_model, n.ahead = h)
-rough_forecast <- rough_pred_obj$pred
-rough_se <- rough_pred_obj$se  # Standard error for prediction intervals
+rough_pred_obj <- predict(fit_ar1_clean, n.ahead = h)
+rough_forecast <- as.numeric(rough_pred_obj$pred)
+rough_se <- as.numeric(rough_pred_obj$se) 
 
-#Combine Components for Final Prediction
+# combine + transform
+final_prediction_bc <- trend_forecast + seasonal_forecast + rough_forecast
 
-final_prediction <- trend_forecast + seasonal_forecast + rough_forecast
+# Using your stable lambda value
+lambda_val <- -0.4964918 
+inv_bc <- function(x, lam) { (x * lam + 1)^(1/lam) }
 
-#95% Prediction Intervals
-lower_pi <- final_prediction - 1.96 * rough_se
-upper_pi <- final_prediction + 1.96 * rough_se
+final_prediction <- inv_bc(final_prediction_bc, lambda_val)
+lower_pi <- inv_bc(final_prediction_bc - 1.96 * rough_se, lambda_val)
+upper_pi <- inv_bc(final_prediction_bc + 1.96 * rough_se, lambda_val)
 
+# --- 6. VISUALIZATION PREP ---
+# Define the start for march 2026
+forecast_start_date <- c(2026, 3)
 
-#Visualization of Results
+forecast_ts <- ts(final_prediction, start = forecast_start_date, frequency = 12)
+lower_ts <- ts(lower_pi, start = forecast_start_date, frequency = 12)
+upper_ts <- ts(upper_pi, start = forecast_start_date, frequency = 12)
 
-# Convert forecasts to time series objects starting Mar 2026
-forecast_ts <- ts(final_prediction, start = c(2026, 3), frequency = 12)
-lower_ts <- ts(lower_pi, start = c(2026, 3), frequency = 12)
-upper_ts <- ts(upper_pi, start = c(2026, 3), frequency = 12)
+# Calculate y_max here so the plot() function doesn't error out
+y_max <- max(c(as.numeric(bts_ts), as.numeric(upper_pi)), na.rm = TRUE)
 
-# Create the plot
+# --- 7. THE FINAL PLOT ---
 plot(bts_ts, 
      xlim = c(2021, 2027.5), 
-     ylim = c(min(lower_pi), max(bts_ts) + 10),
-     main = "BTS Search Interest: 12-Month Forecast",
+     ylim = c(0, y_max + 10),
+     main = "BTS Forecast: 2026 Projections (Excluding Outlier)",
      ylab = "Interest Score", 
      xlab = "Year",
      lwd = 2)
 
-# Add the point forecast line
 lines(forecast_ts, col = "blue", lwd = 2)
-
-# Add the 95% Prediction Interval (dashed lines)
 lines(lower_ts, col = "red", lty = 2)
 lines(upper_ts, col = "red", lty = 2)
 
-# Add a legend
 legend("topright", 
-       legend = c("Observed Data", "AR(1) Forecast", "95% Pred. Interval"),
+       legend = c("Observed Data", "Point Forecast", "95% PI"),
        col = c("black", "blue", "red"), 
        lty = c(1, 1, 2), 
        lwd = c(2, 2, 1),
        cex = 0.8)
-
-print(data.frame(
-  Month = seq(as.Date("2026-03-01"), by="month", length.out=h),
-  Forecast = as.numeric(final_prediction),
-  Lower_95 = as.numeric(lower_pi),
-  Upper_95 = as.numeric(upper_pi)
-))
 ```
 
 ```{r forecasting with outlier}
