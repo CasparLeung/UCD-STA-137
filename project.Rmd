@@ -2,7 +2,10 @@
 title: "STA137 Final Project"
 author: "Caspar Leung and Elizabeth Louie"
 date: "2026-03-05"
-output: html_document
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
 ---
 
 
@@ -179,6 +182,59 @@ abline(h = 0, col = "red", lty = 2)
 
 ```
 
+```{r}
+# --- Analyzing the "Smooth" Component: No Gaps Version ---
+
+# 1. Define the full time series and perform Box-Cox transformation
+bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021, 3))
+BoxCox_lambda_val <- BoxCox.lambda(bts_ts_full)
+bts_bc_full <- BoxCox(bts_ts_full, lambda = BoxCox_lambda_val)
+
+# 2. Use LOESS instead of filter() to get a trend with NO GAPS
+# We convert time to a numeric vector for the loess function
+time_axis <- as.numeric(time(bts_bc_full))
+loess_fit <- loess(as.numeric(bts_bc_full) ~ time_axis, span = 0.5)
+hatm_full_no_gap <- ts(predict(loess_fit), start = c(2021, 3), frequency = 12)
+
+# 3. Create segments for the plot (Early vs Late)
+hatm_early <- window(hatm_full_no_gap, end = c(2022, 6))
+hatm_late  <- window(hatm_full_no_gap, start = c(2022, 6))
+
+# 4. Perform Decomposition for the rest of your analysis
+# (Note: decompose() will still show gaps in its internal plot because it uses filters)
+decomp <- decompose(bts_bc_full, type = "additive")
+
+# 5. Plot 1: Trend Estimate (Visualizing Early vs Late Periods)
+# Now the lines will reach the very start and very end of your data
+plot(bts_bc_full,
+     main = "Trend Estimate: Early vs Late Periods (No Gaps)",
+     ylab = "Interest (Box-Cox)",
+     xlab = "Time",
+     col = "gray80") 
+lines(hatm_early, col = "blue", lwd = 2)
+lines(hatm_late, col = "red", lwd = 2)
+legend("topright", legend=c("Early Period", "Later Period"), 
+       col=c("blue", "red"), lwd=2, bty="n")
+
+# 6. Plot 2: Trend Estimate (Full Purple Line)
+plot(bts_bc_full,
+     main = "Full Trend Estimate (Loess Smoothing)",
+     ylab = "Interest (Box-Cox)",
+     xlab = "Time")
+lines(hatm_full_no_gap, col = "purple", lwd = 2)
+
+# 7. Check if the Residuals are White Noise
+checkresiduals(decomp$random)
+
+# 8. Plot Residuals
+plot(decomp$random, 
+     main = "Residuals After Trend & Seasonality Removal",
+     ylab = "Residual Value",
+     xlab = "Year",
+     col = "blue")
+abline(h = 0, col = "red", lty = 2)
+```
+
 
 
 
@@ -285,6 +341,81 @@ legend("topright",
        lwd = c(2, 2, 1),
        cex = 0.8)
 ```
+```{r}
+# --- 1. PREDICT FUTURE VALUES ---
+h <- 12  
+n <- length(bts_bc) 
+weights <- c(0.5, rep(1, 11), 0.5)/12
+
+# Trend: Use the last calculated trend value
+hatm_clean <- stats::filter(bts_bc, filter = weights, sides = 2)
+last_trend <- as.numeric(na.omit(hatm_clean))
+last_trend <- last_trend[length(last_trend)] 
+trend_forecast <- rep(last_trend, h) 
+
+# Seasonality: Extract the 12-month pattern
+decomp_clean <- decompose(bts_bc, type = "additive")
+seasonal_cycle <- as.numeric(decomp_clean$seasonal)[1:12]
+seasonal_forecast <- rep(seasonal_cycle, length.out = h)
+
+# Rough component: AR(1) prediction
+rough_clean <- na.omit(decomp_clean$random)
+fit_ar1_clean <- Arima(rough_clean, order = c(1, 0, 0))
+rough_pred_obj <- predict(fit_ar1_clean, n.ahead = h)
+rough_forecast <- as.numeric(rough_pred_obj$pred)
+rough_se <- as.numeric(rough_pred_obj$se) 
+
+# --- 2. COMBINE & TRANSFORM ---
+# Calculate the forecast values in Box-Cox scale
+final_prediction_bc <- trend_forecast + seasonal_forecast + rough_forecast
+
+# Apply inverse Box-Cox
+lambda_val <- -0.4964918 
+inv_bc <- function(x, lam) { (x * lam + 1)^(1/lam) }
+
+final_prediction <- inv_bc(final_prediction_bc, lambda_val)
+lower_pi <- inv_bc(final_prediction_bc - 1.96 * rough_se, lambda_val)
+upper_pi <- inv_bc(final_prediction_bc + 1.96 * rough_se, lambda_val)
+
+# --- 3. BRIDGE THE GAP (The Fix) ---
+# Identify the last date and value of your historical data
+last_obs_time <- tail(time(bts_ts), 1)
+last_obs_val <- tail(bts_ts, 1)
+
+# Add the last observed point to the front of your forecast vectors
+# This forces the line to "start" exactly where the old one "ends"
+forecast_combined <- c(last_obs_val, final_prediction)
+lower_combined <- c(last_obs_val, lower_pi)
+upper_combined <- c(last_obs_val, upper_pi)
+
+# Create TS objects starting at the last observed time
+forecast_ts <- ts(forecast_combined, start = last_obs_time, frequency = 12)
+lower_ts <- ts(lower_combined, start = last_obs_time, frequency = 12)
+upper_ts <- ts(upper_combined, start = last_obs_time, frequency = 12)
+
+# --- 4. THE FINAL PLOT ---
+y_max <- max(c(as.numeric(bts_ts), as.numeric(upper_pi)), na.rm = TRUE)
+
+plot(bts_ts, 
+     xlim = c(2021, 2027.5), 
+     ylim = c(0, y_max + 10),
+     main = "BTS Forecast: 2026 Projections (Connected)",
+     ylab = "Interest Score", 
+     xlab = "Year",
+     lwd = 2)
+
+# Plot the connected forecast and intervals
+lines(forecast_ts, col = "blue", lwd = 2)
+lines(lower_ts, col = "red", lty = 2)
+lines(upper_ts, col = "red", lty = 2)
+
+legend("topright", 
+       legend = c("Observed Data", "Point Forecast", "95% PI"),
+       col = c("black", "blue", "red"), 
+       lty = c(1, 1, 2), 
+       lwd = c(2, 2, 1),
+       cex = 0.8)
+```
 
 ```{r forecasting with outlier}
 # Create the full time series object (including the outlier)
@@ -354,6 +485,80 @@ final_forecast <- InvBoxCox(final_forecast_bc, lambda = lambda_full)
 plot(bts_ts_full, xlim = c(2021, 2027.5), main = "BTS Search Interest Forecast (With Outlier)")
 lines(ts(final_forecast, start = c(2026, 3), frequency = 12), col = "red", lwd = 2)
 ```
+
+```{r}
+# --- 1. PREPARE FULL DATA ---
+bts_ts_full <- ts(df$Interest, frequency = 12, start = c(2021, 3))
+
+# Variance stabilization
+lambda_full <- BoxCox.lambda(bts_ts_full) 
+bts_bc_full <- BoxCox(bts_ts_full, lambda = lambda_full)
+
+# --- 2. DECOMPOSITION ---
+# Trend estimation (Moving Average)
+hatm_full <- stats::filter(bts_bc_full, sides = 2, c(0.5, rep(1, 11), 0.5)/12)
+
+# Seasonal estimation
+detrended_full <- bts_bc_full - hatm_full
+A_full <- matrix(detrended_full, ncol = 12, byrow = TRUE)
+mu_full <- colMeans(A_full, na.rm = TRUE)
+
+# Ensure seasonal components sum to 0
+hats_full <- mu_full - mean(mu_full)
+seasonal_full_ts <- ts(rep(hats_full, length.out = length(bts_ts_full)), 
+                       start = c(2021, 3), frequency = 12)
+
+# Rough Component
+rough_resid_full <- bts_bc_full - hatm_full - seasonal_full_ts
+rough_resid_full <- na.omit(rough_resid_full)
+
+# --- 3. FORECASTING (12 Months Ahead) ---
+h_full <- 12
+fit_full <- Arima(rough_resid_full, order = c(1, 0, 0))
+
+# Predict Trend (Quadratic continuation)
+t_vals <- 1:length(bts_bc_full)
+trend_model <- lm(bts_bc_full ~ t_vals + I(t_vals^2))
+future_t_full <- (length(bts_bc_full) + 1):(length(bts_bc_full) + h_full)
+trend_pred <- predict(trend_model, newdata = data.frame(t_vals = future_t_full))
+
+# Predict Seasonality & Rough
+seasonal_pred <- rep(hats_full, length.out = h_full)
+rough_pred_obj <- predict(fit_full, n.ahead = h_full)
+rough_pred <- rough_pred_obj$pred
+
+# Combine and Inverse Transform
+final_forecast_bc <- trend_pred + seasonal_pred + rough_pred
+final_forecast <- InvBoxCox(final_forecast_bc, lambda = lambda_full)
+
+# --- 4. BRIDGE THE GAP (The Fix) ---
+# 1. Get the last point of historical data
+last_obs_time <- tail(time(bts_ts_full), 1)
+last_obs_val  <- tail(bts_ts_full, 1)
+
+# 2. Append historical end-point to the front of the forecast
+forecast_combined <- c(last_obs_val, final_forecast)
+
+# 3. Create TS object starting at the last observation's timestamp
+forecast_ts <- ts(forecast_combined, start = last_obs_time, frequency = 12)
+
+# --- 5. FINAL PLOT ---
+plot(bts_ts_full, 
+     xlim = c(2021, 2027.5), 
+     main = "BTS Search Interest Forecast (With Outlier)",
+     ylab = "Interest Score",
+     xlab = "Year",
+     lwd = 2)
+
+# This line will now connect perfectly to the historical data
+lines(forecast_ts, col = "red", lwd = 2)
+
+legend("topright", 
+       legend = c("Historical Data", "Forecast"), 
+       col = c("black", "red"), 
+       lwd = 2)
+```
+
 
 ```{r forecasting up to outlier}
 
