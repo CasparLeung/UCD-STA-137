@@ -1,3 +1,5 @@
+Authors: Caspar Leung and Elizabeth Louie
+
 Introduction
 
 In this project we use time series methods to investigate a public search interest dataset for K-Pop group BTS. Our main goal is to identify ARMA models that best capture this time series data from the past five years in order to produce accurate forecasts for future publicity trends. K-pop popularity typically spreads through social media and online fandom networks, therefore examination of digital engagement through Google search trends provides a useful indicator of patterns over time. Further understanding of how BTS interest evolves over time has meaningful implications for cultural analysis for the music industry and the broader stories of celebrity lifetime dynamics.
